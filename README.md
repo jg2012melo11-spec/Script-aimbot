@@ -1,452 +1,406 @@
 --[[
-    Script: Advanced Aimbot & ESP System
-    Autor: Desenvolvedor
-    Descrição: Sistema completo de aimbot com suavização e ESP para uso próprio.
-    Biblioteca: Rayfield UI
+    Script: Aimbot & ESP System - VERSÃO COMPLETAMENTE FUNCIONAL
+    Como usar: Execute em um executor compatível (Synapse X, Krnl, Scriptware, etc.)
 ]]
 
--- Carregar a biblioteca Rayfield
+-- Carregar Rayfield
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- ============================================
--- SEÇÃO: CONFIGURAÇÕES INICIAIS
+-- CONFIGURAÇÕES INICIAIS
 -- ============================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
 
--- Estado dos recursos
-local state = {
-    aimbotEnabled = false,
-    espEnabled = false,
-    espLinesEnabled = false,
-    fovRadius = 120,  -- Raio do FOV em pixels
-    currentTarget = nil,
-    espObjects = {},   -- Armazena objetos Drawing para ESP
-}
+-- Variáveis do sistema
+local AimbotEnabled = false
+local ESPEnabled = false
+local ESPLinesEnabled = false
+local FOVRadius = 120
+local Smoothness = 0.3
 
--- Configurações de suavização do aimbot
-local smoothSettings = {
-    enabled = true,
-    factor = 0.15,    -- Fator de suavização (0 = muito suave, 1 = instantâneo)
-}
+-- Objetos de desenho
+local FOVCircle = nil
+local ESPObjects = {}
+local CurrentTarget = nil
 
 -- ============================================
--- SEÇÃO: INTERFACE RAYFIELD
+-- FUNÇÕES DE UTILIDADE
 -- ============================================
 
--- Criar janela principal
+-- Função para obter a posição da cabeça
+local function GetHeadPosition(Character)
+    if not Character then return nil end
+    
+    local Head = Character:FindFirstChild("Head")
+    if Head then
+        return Head.Position
+    end
+    
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+    if HumanoidRootPart then
+        return HumanoidRootPart.Position + Vector3.new(0, 1.5, 0)
+    end
+    
+    return nil
+end
+
+-- Verificar se player é válido
+local function IsValidPlayer(Player)
+    if not Player then return false end
+    if Player == LocalPlayer then return false end
+    if not Player.Character then return false end
+    
+    local Humanoid = Player.Character:FindFirstChildWhichIsA("Humanoid")
+    if not Humanoid or Humanoid.Health <= 0 then return false end
+    
+    return true
+end
+
+-- Calcular distância do centro da tela
+local function GetDistanceFromCenter(WorldPosition)
+    local ScreenPos, OnScreen = Camera:WorldToViewportPoint(WorldPosition)
+    if not OnScreen then return math.huge end
+    
+    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local Pos = Vector2.new(ScreenPos.X, ScreenPos.Y)
+    
+    return (Pos - Center).Magnitude
+end
+
+-- Encontrar player mais próximo do centro da tela
+local function GetClosestPlayer()
+    local ClosestDistance = FOVRadius
+    local ClosestPlayer = nil
+    
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if IsValidPlayer(Player) then
+            local HeadPos = GetHeadPosition(Player.Character)
+            if HeadPos then
+                local Distance = GetDistanceFromCenter(HeadPos)
+                
+                if Distance < ClosestDistance then
+                    ClosestDistance = Distance
+                    ClosestPlayer = Player
+                end
+            end
+        end
+    end
+    
+    return ClosestPlayer
+end
+
+-- ============================================
+-- FUNÇÕES DO FOV (CÍRCULO VISUAL)
+-- ============================================
+
+local function CreateFOVCircle()
+    if FOVCircle then
+        FOVCircle:Remove()
+    end
+    
+    FOVCircle = Drawing.new("Circle")
+    FOVCircle.Radius = FOVRadius
+    FOVCircle.Thickness = 2
+    FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+    FOVCircle.Filled = false
+    FOVCircle.NumSides = 64
+    FOVCircle.Visible = AimbotEnabled
+    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+end
+
+local function UpdateFOVCircle()
+    if FOVCircle then
+        FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        FOVCircle.Radius = FOVRadius
+        FOVCircle.Visible = AimbotEnabled
+    end
+end
+
+-- ============================================
+-- FUNÇÕES DO AIMBOT
+-- ============================================
+
+local function ApplyAimbot(TargetPlayer)
+    if not TargetPlayer or not TargetPlayer.Character then return end
+    
+    local HeadPos = GetHeadPosition(TargetPlayer.Character)
+    if not HeadPos then return end
+    
+    -- CFrame alvo olhando para a cabeça
+    local TargetCFrame = CFrame.new(Camera.CFrame.Position, HeadPos)
+    
+    -- Aplicar suavização
+    local NewCFrame = Camera.CFrame:Lerp(TargetCFrame, Smoothness)
+    Camera.CFrame = NewCFrame
+end
+
+-- ============================================
+-- FUNÇÕES DO ESP
+-- ============================================
+
+local function CreateESPObjects(Player)
+    local Objects = {
+        Box = Drawing.new("Square"),
+        Name = Drawing.new("Text"),
+        HealthBar = Drawing.new("Line"),
+        Line = Drawing.new("Line")
+    }
+    
+    -- Configurar Box
+    Objects.Box.Thickness = 2
+    Objects.Box.Color = Color3.fromRGB(255, 0, 0)
+    Objects.Box.Filled = false
+    Objects.Box.Visible = false
+    
+    -- Configurar Nome
+    Objects.Name.Size = 14
+    Objects.Name.Center = true
+    Objects.Name.Outline = true
+    Objects.Name.Color = Color3.fromRGB(255, 255, 255)
+    Objects.Name.Visible = false
+    
+    -- Configurar Barra de Vida
+    Objects.HealthBar.Thickness = 3
+    Objects.HealthBar.Color = Color3.fromRGB(0, 255, 0)
+    Objects.HealthBar.Visible = false
+    
+    -- Configurar Linha
+    Objects.Line.Thickness = 1
+    Objects.Line.Color = Color3.fromRGB(255, 0, 0)
+    Objects.Line.Visible = false
+    
+    return Objects
+end
+
+local function UpdateESP()
+    if not ESPEnabled then return end
+    
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and IsValidPlayer(Player) then
+            -- Criar objetos se não existirem
+            if not ESPObjects[Player.UserId] then
+                ESPObjects[Player.UserId] = CreateESPObjects(Player)
+            end
+            
+            local Objects = ESPObjects[Player.UserId]
+            local Character = Player.Character
+            local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+            local Humanoid = Character:FindFirstChildWhichIsA("Humanoid")
+            
+            if HumanoidRootPart and Humanoid then
+                local ScreenPos, OnScreen = Camera:WorldToViewportPoint(HumanoidRootPart.Position)
+                
+                if OnScreen then
+                    -- Calcular tamanho da box baseado na distância
+                    local Distance = (Camera.CFrame.Position - HumanoidRootPart.Position).Magnitude
+                    local BoxSize = math.clamp(200 / Distance, 40, 150)
+                    
+                    -- Atualizar Box
+                    Objects.Box.Size = Vector2.new(BoxSize, BoxSize)
+                    Objects.Box.Position = Vector2.new(ScreenPos.X - BoxSize/2, ScreenPos.Y - BoxSize)
+                    Objects.Box.Visible = true
+                    
+                    -- Atualizar Nome
+                    Objects.Name.Text = Player.Name
+                    Objects.Name.Position = Vector2.new(ScreenPos.X, ScreenPos.Y - BoxSize - 10)
+                    Objects.Name.Visible = true
+                    
+                    -- Atualizar Barra de Vida
+                    local HealthPercent = Humanoid.Health / Humanoid.MaxHealth
+                    Objects.HealthBar.From = Vector2.new(ScreenPos.X - BoxSize/2, ScreenPos.Y - BoxSize - 2)
+                    Objects.HealthBar.To = Vector2.new(ScreenPos.X - BoxSize/2 + (BoxSize * HealthPercent), ScreenPos.Y - BoxSize - 2)
+                    Objects.HealthBar.Visible = true
+                    
+                    -- Atualizar Linha (ESP Lines)
+                    if ESPLinesEnabled then
+                        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        Objects.Line.From = Center
+                        Objects.Line.To = Vector2.new(ScreenPos.X, ScreenPos.Y)
+                        Objects.Line.Visible = true
+                    else
+                        Objects.Line.Visible = false
+                    end
+                else
+                    -- Esconder objetos se estiver fora da tela
+                    Objects.Box.Visible = false
+                    Objects.Name.Visible = false
+                    Objects.HealthBar.Visible = false
+                    Objects.Line.Visible = false
+                end
+            end
+        end
+    end
+end
+
+local function ClearESP()
+    for _, Objects in pairs(ESPObjects) do
+        pcall(function()
+            Objects.Box:Remove()
+            Objects.Name:Remove()
+            Objects.HealthBar:Remove()
+            Objects.Line:Remove()
+        end)
+    end
+    ESPObjects = {}
+end
+
+-- ============================================
+-- CRIAR INTERFACE RAYFIELD
+-- ============================================
+
 local Window = Rayfield:CreateWindow({
-    Name = "Aimbot System v1.0",
+    Name = "Aimbot & ESP System",
     Icon = 0,
-    LoadingTitle = "Carregando Aimbot System",
-    LoadingSubtitle = "by Desenvolvedor",
+    LoadingTitle = "Carregando...",
+    LoadingSubtitle = "Aimbot System",
     Theme = "Default",
     ToggleUIKeybind = "K",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "AimbotSystem",
         FileName = "Config"
-    },
-    KeySystem = false,  -- Desativado para uso próprio
+    }
 })
 
--- Criar aba principal
-local AimbotTab = Window:CreateTab("Aimbot Settings", 4483362458)
+local MainTab = Window:CreateTab("Main", 4483362458)
 
--- Criar seção de aimbot
-local AimbotSection = AimbotTab:CreateSection("Aimbot Configuration")
+-- Seção Aimbot
+local AimbotSection = MainTab:CreateSection("Aimbot")
 
--- Toggle do Aimbot
-AimbotTab:CreateToggle({
-    Name = "Aimbot",
+-- Toggle Aimbot
+MainTab:CreateToggle({
+    Name = "Ativar Aimbot",
     CurrentValue = false,
     Flag = "AimbotToggle",
     Callback = function(Value)
-        state.aimbotEnabled = Value
-        if not Value then
-            state.currentTarget = nil
+        AimbotEnabled = Value
+        if FOVCircle then
+            FOVCircle.Visible = Value
         end
-        print("[Aimbot] Estado:", Value and "Ativado" or "Desativado")
+        if not Value then
+            CurrentTarget = nil
+        end
+        print("[Aimbot] " .. (Value and "Ativado" or "Desativado"))
     end
 })
 
--- Slider do FOV
-AimbotTab:CreateSlider({
-    Name = "FOV Radius",
-    Min = 120,
-    Max = 1000,
+-- Slider FOV
+MainTab:CreateSlider({
+    Name = "Raio do FOV",
+    Min = 50,
+    Max = 500,
     Increment = 10,
     Suffix = "px",
     CurrentValue = 120,
     Flag = "FOVSlider",
     Callback = function(Value)
-        state.fovRadius = Value
-        print("[FOV] Raio ajustado para:", Value)
+        FOVRadius = Value
+        if FOVCircle then
+            FOVCircle.Radius = Value
+        end
+        print("[FOV] Raio: " .. Value)
     end
 })
 
--- Toggle do ESP
-AimbotTab:CreateToggle({
-    Name = "ESP (Ver através de paredes)",
+-- Slider Suavização
+MainTab:CreateSlider({
+    Name = "Suavização do Aimbot",
+    Min = 0,
+    Max = 100,
+    Increment = 5,
+    Suffix = "%",
+    CurrentValue = 70,
+    Flag = "SmoothSlider",
+    Callback = function(Value)
+        Smoothness = Value / 100
+        print("[Smooth] Suavização: " .. Smoothness)
+    end
+})
+
+-- Seção ESP
+local ESPection = MainTab:CreateSection("ESP")
+
+-- Toggle ESP
+MainTab:CreateToggle({
+    Name = "Ativar ESP",
     CurrentValue = false,
     Flag = "ESPToggle",
     Callback = function(Value)
-        state.espEnabled = Value
-        if Value then
-            setupESP()
-        else
-            clearESP()
+        ESPEnabled = Value
+        if not Value then
+            ClearESP()
         end
-        print("[ESP] Estado:", Value and "Ativado" or "Desativado")
+        print("[ESP] " .. (Value and "Ativado" or "Desativado"))
     end
 })
 
--- Toggle das linhas do ESP
-AimbotTab:CreateToggle({
-    Name = "ESP Lines (Linhas para os players)",
+-- Toggle ESP Lines
+MainTab:CreateToggle({
+    Name = "Ativar Linhas do ESP",
     CurrentValue = false,
     Flag = "ESPLinesToggle",
     Callback = function(Value)
-        state.espLinesEnabled = Value
-        print("[ESP Lines] Estado:", Value and "Ativado" or "Desativado")
+        ESPLinesEnabled = Value
+        print("[ESP Lines] " .. (Value and "Ativado" or "Desativado"))
     end
 })
 
--- Criar seção de configurações avançadas
-local AdvancedSection = AimbotTab:CreateSection("Advanced Settings")
+-- ============================================
+-- LOOP PRINCIPAL
+-- ============================================
 
--- Slider de suavização do aimbot
-AimbotTab:CreateSlider({
-    Name = "Aimbot Smoothness",
-    Min = 1,
-    Max = 100,
-    Increment = 1,
-    Suffix = "%",
-    CurrentValue = 85,
-    Flag = "SmoothSlider",
-    Callback = function(Value)
-        -- Inverter o valor: quanto maior o slider, mais suave
-        smoothSettings.factor = math.clamp(Value / 100, 0.05, 0.95)
-        smoothSettings.factor = 1 - smoothSettings.factor  -- Inverte para comportamento intuitivo
-        print("[Smooth] Fator de suavização:", smoothSettings.factor)
+-- Criar círculo do FOV
+CreateFOVCircle()
+
+-- Loop de atualização
+RunService.RenderStepped:Connect(function()
+    -- Atualizar posição do círculo FOV
+    UpdateFOVCircle()
+    
+    -- Aimbot
+    if AimbotEnabled then
+        local Target = GetClosestPlayer()
+        if Target then
+            ApplyAimbot(Target)
+        end
     end
-})
+    
+    -- ESP
+    if ESPEnabled then
+        UpdateESP()
+    end
+end)
 
--- Notificação de inicialização
+-- Atualizar círculo quando a tela redimensionar
+Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    UpdateFOVCircle()
+end)
+
+-- Limpar ESP quando jogadores saírem
+Players.PlayerRemoving:Connect(function(Player)
+    if ESPObjects[Player.UserId] then
+        local Objects = ESPObjects[Player.UserId]
+        pcall(function()
+            Objects.Box:Remove()
+            Objects.Name:Remove()
+            Objects.HealthBar:Remove()
+            Objects.Line:Remove()
+        end)
+        ESPObjects[Player.UserId] = nil
+    end
+end)
+
+-- Notificação de início
 Rayfield:Notify({
     Title = "Sistema Carregado",
-    Content = "Aimbot e ESP prontos para uso!",
-    Duration = 3,
+    Content = "Pressione K para abrir o menu",
+    Duration = 5
 })
 
--- ============================================
--- SEÇÃO: LÓGICA DO AIMBOT
--- ============================================
-
--- Função para obter a posição da cabeça do alvo
-local function getHeadPosition(targetCharacter)
-    if not targetCharacter then return nil end
-    
-    -- Tenta encontrar a cabeça
-    local head = targetCharacter:FindFirstChild("Head")
-    if head then
-        return head.Position
-    end
-    
-    -- Fallback: usa o HumanoidRootPart
-    local hrp = targetCharacter:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        return hrp.Position + Vector3.new(0, 1.5, 0)
-    end
-    
-    return nil
-end
-
--- Função para verificar se um player é válido (não é o próprio jogador e está vivo)
-local function isValidPlayer(targetPlayer)
-    if not targetPlayer then return false end
-    if targetPlayer == LocalPlayer then return false end
-    
-    local character = targetPlayer.Character
-    if not character then return false end
-    
-    local humanoid = character:FindFirstChildWhichIsA("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return false end
-    
-    return true
-end
-
--- Função para calcular a distância do centro da tela até um ponto 3D
-local function getDistanceFromScreenCenter(worldPosition)
-    local vector, onScreen = Camera:WorldToViewportPoint(worldPosition)
-    if not onScreen then return math.huge end
-    
-    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local screenPos = Vector2.new(vector.X, vector.Y)
-    return (screenPos - screenCenter).Magnitude
-end
-
--- Função para encontrar o player mais próximo do centro da tela dentro do FOV
-local function findClosestTarget()
-    local closestDistance = state.fovRadius
-    local closestPlayer = nil
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if isValidPlayer(player) then
-            local character = player.Character
-            local headPos = getHeadPosition(character)
-            
-            if headPos then
-                local distance = getDistanceFromScreenCenter(headPos)
-                
-                -- Verifica se está dentro do FOV
-                if distance <= state.fovRadius and distance < closestDistance then
-                    closestDistance = distance
-                    closestPlayer = player
-                end
-            end
-        end
-    end
-    
-    return closestPlayer
-end
-
--- Função para aplicar o aimbot com suavização
-local function applySmoothAimbot(targetPlayer)
-    if not targetPlayer or not targetPlayer.Character then return end
-    
-    local headPos = getHeadPosition(targetPlayer.Character)
-    if not headPos then return end
-    
-    -- Calcula o CFrame alvo olhando para a cabeça do jogador
-    local targetCFrame = CFrame.new(Camera.CFrame.Position, headPos)
-    
-    -- Aplica suavização usando Lerp
-    local newCFrame = Camera.CFrame:Lerp(targetCFrame, smoothSettings.factor)
-    Camera.CFrame = newCFrame
-end
-
--- Função para aplicar aimbot instantâneo
-local function applyInstantAimbot(targetPlayer)
-    if not targetPlayer or not targetPlayer.Character then return end
-    
-    local headPos = getHeadPosition(targetPlayer.Character)
-    if not headPos then return end
-    
-    -- Aplica instantaneamente
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, headPos)
-end
-
--- ============================================
--- SEÇÃO: LÓGICA DO ESP
--- ============================================
-
--- Função para criar elementos de desenho (ESP)
-local function createDrawingObjects()
-    return {
-        box = Drawing.new("Square"),
-        name = Drawing.new("Text"),
-        healthBar = Drawing.new("Line"),
-        lineToPlayer = Drawing.new("Line"),  -- Para as linhas do ESP
-    }
-end
-
--- Função para configurar as propriedades dos elementos de desenho
-local function setupDrawingProperties(drawings, color)
-    -- Configurar box (quadrado)
-    drawings.box.Thickness = 2
-    drawings.box.Color = color
-    drawings.box.Filled = false
-    drawings.box.Visible = true
-    
-    -- Configurar texto do nome
-    drawings.name.Size = 14
-    drawings.name.Center = true
-    drawings.name.Outline = true
-    drawings.name.Color = Color3.fromRGB(255, 255, 255)
-    drawings.name.Visible = true
-    
-    -- Configurar barra de vida
-    drawings.healthBar.Thickness = 3
-    drawings.healthBar.Color = Color3.fromRGB(0, 255, 0)
-    drawings.healthBar.Visible = true
-    
-    -- Configurar linha (ESP Lines)
-    drawings.lineToPlayer.Thickness = 1
-    drawings.lineToPlayer.Color = color
-    drawings.lineToPlayer.Visible = state.espLinesEnabled
-end
-
--- Função para atualizar o ESP de um jogador
-local function updateESPForPlayer(player, drawings)
-    if not player.Character then return end
-    
-    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-    local humanoid = player.Character:FindFirstChildWhichIsA("Humanoid")
-    
-    if not hrp or not humanoid then
-        -- Esconder elementos se o personagem não estiver válido
-        drawings.box.Visible = false
-        drawings.name.Visible = false
-        drawings.healthBar.Visible = false
-        drawings.lineToPlayer.Visible = false
-        return
-    end
-    
-    -- Converter posição 3D para 2D
-    local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-    
-    if onScreen and state.espEnabled then
-        -- Calcular tamanho da box baseado na distância
-        local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
-        local boxSize = math.clamp(300 / distance, 30, 150)
-        
-        -- Atualizar box (quadrado ao redor do player)
-        drawings.box.Size = Vector2.new(boxSize, boxSize)
-        drawings.box.Position = Vector2.new(pos.X - boxSize/2, pos.Y - boxSize)
-        drawings.box.Visible = true
-        
-        -- Atualizar nome do player
-        drawings.name.Text = player.Name
-        drawings.name.Position = Vector2.new(pos.X, pos.Y - boxSize - 10)
-        drawings.name.Visible = true
-        
-        -- Atualizar barra de vida
-        local healthPercent = humanoid.Health / humanoid.MaxHealth
-        local barWidth = boxSize
-        local barHeight = 4
-        
-        drawings.healthBar.From = Vector2.new(pos.X - barWidth/2, pos.Y - boxSize - 2)
-        drawings.healthBar.To = Vector2.new(pos.X - barWidth/2 + (barWidth * healthPercent), pos.Y - boxSize - 2)
-        drawings.healthBar.Visible = true
-        
-        -- Atualizar linha do centro da tela ao player (ESP Lines)
-        if state.espLinesEnabled then
-            local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-            drawings.lineToPlayer.From = screenCenter
-            drawings.lineToPlayer.To = Vector2.new(pos.X, pos.Y)
-            drawings.lineToPlayer.Visible = true
-        else
-            drawings.lineToPlayer.Visible = false
-        end
-    else
-        -- Esconder elementos se o player estiver fora da tela
-        drawings.box.Visible = false
-        drawings.name.Visible = false
-        drawings.healthBar.Visible = false
-        drawings.lineToPlayer.Visible = false
-    end
-end
-
--- Função para configurar o ESP para todos os players
-local function setupESP()
-    -- Limpar ESP existente
-    clearESP()
-    
-    -- Criar objetos de desenho para cada player
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local drawings = createDrawingObjects()
-            setupDrawingProperties(drawings, Color3.fromRGB(255, 0, 0)) -- Vermelho para inimigos
-            state.espObjects[player.UserId] = drawings
-        end
-    end
-end
-
--- Função para limpar todos os elementos do ESP
-local function clearESP()
-    for userId, drawings in pairs(state.espObjects) do
-        -- Remover todos os objetos de desenho
-        if drawings.box then drawings.box:Remove() end
-        if drawings.name then drawings.name:Remove() end
-        if drawings.healthBar then drawings.healthBar:Remove() end
-        if drawings.lineToPlayer then drawings.lineToPlayer:Remove() end
-    end
-    state.espObjects = {}
-end
-
--- Função para lidar com novos players que entram no jogo
-local function onPlayerAdded(player)
-    if player ~= LocalPlayer and state.espEnabled then
-        local drawings = createDrawingObjects()
-        setupDrawingProperties(drawings, Color3.fromRGB(255, 0, 0))
-        state.espObjects[player.UserId] = drawings
-    end
-end
-
--- Função para lidar com players que saem do jogo
-local function onPlayerRemoving(player)
-    local drawings = state.espObjects[player.UserId]
-    if drawings then
-        if drawings.box then drawings.box:Remove() end
-        if drawings.name then drawings.name:Remove() end
-        if drawings.healthBar then drawings.healthBar:Remove() end
-        if drawings.lineToPlayer then drawings.lineToPlayer:Remove() end
-        state.espObjects[player.UserId] = nil
-    end
-end
-
--- ============================================
--- SEÇÃO: LOOP PRINCIPAL (RENDER STEP)
--- ============================================
-
--- Loop principal executado a cada frame
-local function onRenderStep()
-    -- Aimbot logic
-    if state.aimbotEnabled then
-        local target = findClosestTarget()
-        state.currentTarget = target
-        
-        if target then
-            -- Aplica aimbot com suavização
-            applySmoothAimbot(target)
-        end
-    end
-    
-    -- ESP update logic
-    if state.espEnabled then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local drawings = state.espObjects[player.UserId]
-                if drawings then
-                    updateESPForPlayer(player, drawings)
-                end
-            end
-        end
-    end
-end
-
--- ============================================
--- SEÇÃO: INICIALIZAÇÃO E EVENTOS
--- ============================================
-
--- Conectar eventos de players
-Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(onPlayerRemoving)
-
--- Conectar o loop principal ao RenderStepped
-RunService.RenderStepped:Connect(onRenderStep)
-
--- Inicializar ESP se já estiver ativo (caso o jogador ative via configuração salva)
-task.wait(1)  -- Aguardar um pouco para garantir que o personagem carregou
-if state.espEnabled then
-    setupESP()
-end
-
-print("[Sistema] Aimbot System inicializado com sucesso!")
-print("[Sistema] Pressione 'K' para abrir/fechar o menu")
-
--- ============================================
--- SEÇÃO: FUNÇÕES UTILITÁRIAS
--- ============================================
-
--- Função de clamp para valores (adicionada ao globals)
-if not math.clamp then
-    function math.clamp(value, min, max)
-        return math.max(min, math.min(max, value))
-    end
-end
+print("[Sistema] Aimbot & ESP System carregado com sucesso!")
+print("[Sistema] Pressione K para abrir o menu")
