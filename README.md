@@ -1,406 +1,591 @@
 --[[
-    Script: Aimbot & ESP System - VERSÃO COMPLETAMENTE FUNCIONAL
-    Como usar: Execute em um executor compatível (Synapse X, Krnl, Scriptware, etc.)
+    Script: Advanced Aimbot & ESP System - VERSÃO CORRIGIDA
+    Autor: Dark Aura BR 🇧🇷
+    Descrição: Sistema completo de aimbot com suavização e ESP
 ]]
 
--- Carregar Rayfield
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
 -- ============================================
--- CONFIGURAÇÕES INICIAIS
+-- SEÇÃO: VERIFICAÇÃO INICIAL
 -- ============================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local UserInputService = game:GetService("UserInputService")
 
--- Variáveis do sistema
+-- Variáveis de controle
 local AimbotEnabled = false
 local ESPEnabled = false
 local ESPLinesEnabled = false
 local FOVRadius = 120
 local Smoothness = 0.3
-
--- Objetos de desenho
-local FOVCircle = nil
-local ESPObjects = {}
 local CurrentTarget = nil
 
+-- Objetos da UI
+local ScreenGui = nil
+local MainFrame = nil
+local UIConnections = {}
+
+-- Objetos do ESP
+local ESPObjects = {}
+
 -- ============================================
--- FUNÇÕES DE UTILIDADE
+-- SEÇÃO: CRIAÇÃO DA INTERFACE (SEM BIBLIOTECA EXTERNA)
 -- ============================================
 
--- Função para obter a posição da cabeça
-local function GetHeadPosition(Character)
-    if not Character then return nil end
+local function CreateCustomUI()
+    -- Criar ScreenGui
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "DarkAuraGUI"
+    ScreenGui.Parent = game:GetService("CoreGui")
     
-    local Head = Character:FindFirstChild("Head")
-    if Head then
-        return Head.Position
+    -- Criar botão flutuante para abrir o menu
+    local ToggleButton = Instance.new("ImageButton")
+    ToggleButton.Size = UDim2.new(0, 50, 0, 50)
+    ToggleButton.Position = UDim2.new(0, 10, 0, 100)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    ToggleButton.BackgroundTransparency = 0.2
+    ToggleButton.BorderSizePixel = 0
+    ToggleButton.Image = "rbxassetid://3926305904"
+    ToggleButton.Parent = ScreenGui
+    
+    -- Adicionar corner ao botão
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(1, 0)
+    ToggleCorner.Parent = ToggleButton
+    
+    -- Criar frame principal (menu)
+    MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 350, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -175, 0.5, -250)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    MainFrame.BackgroundTransparency = 0.05
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Visible = false
+    MainFrame.Parent = ScreenGui
+    
+    -- Adicionar fundo semi-transparente
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 8)
+    MainCorner.Parent = MainFrame
+    
+    -- Título da janela
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = MainFrame
+    
+    local TitleCorner = Instance.new("UICorner")
+    TitleCorner.CornerRadius = UDim.new(0, 8)
+    TitleCorner.Parent = TitleBar
+    
+    local TitleText = Instance.new("TextLabel")
+    TitleText.Size = UDim2.new(1, -60, 1, 0)
+    TitleText.Position = UDim2.new(0, 10, 0, 0)
+    TitleText.BackgroundTransparency = 1
+    TitleText.Text = "Dark Aura BR 🇧🇷 - Aimbot System"
+    TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TitleText.TextSize = 16
+    TitleText.TextXAlignment = Enum.TextXAlignment.Left
+    TitleText.Font = Enum.Font.GothamBold
+    TitleText.Parent = TitleBar
+    
+    -- Botão minimizar
+    local MinimizeBtn = Instance.new("TextButton")
+    MinimizeBtn.Size = UDim2.new(0, 30, 1, 0)
+    MinimizeBtn.Position = UDim2.new(1, -60, 0, 0)
+    MinimizeBtn.BackgroundTransparency = 1
+    MinimizeBtn.Text = "─"
+    MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinimizeBtn.TextSize = 20
+    MinimizeBtn.Font = Enum.Font.GothamBold
+    MinimizeBtn.Parent = TitleBar
+    
+    -- Botão fechar
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+    CloseBtn.Position = UDim2.new(1, -30, 0, 0)
+    CloseBtn.BackgroundTransparency = 1
+    CloseBtn.Text = "✕"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    CloseBtn.TextSize = 18
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.Parent = TitleBar
+    
+    -- Criar ScrollingFrame para o conteúdo
+    local ContentFrame = Instance.new("ScrollingFrame")
+    ContentFrame.Size = UDim2.new(1, -20, 1, -50)
+    ContentFrame.Position = UDim2.new(0, 10, 0, 50)
+    ContentFrame.BackgroundTransparency = 1
+    ContentFrame.BorderSizePixel = 0
+    ContentFrame.ScrollBarThickness = 6
+    ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 400)
+    ContentFrame.Parent = MainFrame
+    
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.Padding = UDim.new(0, 10)
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.Parent = ContentFrame
+    
+    -- Função para criar toggle
+    local function CreateToggle(text, defaultValue, callback)
+        local ToggleFrame = Instance.new("Frame")
+        ToggleFrame.Size = UDim2.new(1, 0, 0, 40)
+        ToggleFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        ToggleFrame.BackgroundTransparency = 0.3
+        ToggleFrame.BorderSizePixel = 0
+        ToggleFrame.Parent = ContentFrame
+        
+        local ToggleCorner = Instance.new("UICorner")
+        ToggleCorner.CornerRadius = UDim.new(0, 5)
+        ToggleCorner.Parent = ToggleFrame
+        
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(1, -60, 1, 0)
+        Label.Position = UDim2.new(0, 10, 0, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = text
+        Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+        Label.TextSize = 14
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Font = Enum.Font.Gotham
+        Label.Parent = ToggleFrame
+        
+        local ToggleBtn = Instance.new("TextButton")
+        ToggleBtn.Size = UDim2.new(0, 40, 0, 25)
+        ToggleBtn.Position = UDim2.new(1, -50, 0.5, -12.5)
+        ToggleBtn.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+        ToggleBtn.Text = defaultValue and "ON" or "OFF"
+        ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleBtn.TextSize = 12
+        ToggleBtn.Font = Enum.Font.GothamBold
+        ToggleBtn.BorderSizePixel = 0
+        ToggleBtn.Parent = ToggleFrame
+        
+        local BtnCorner = Instance.new("UICorner")
+        BtnCorner.CornerRadius = UDim.new(0, 4)
+        BtnCorner.Parent = ToggleBtn
+        
+        local isOn = defaultValue
+        
+        ToggleBtn.MouseButton1Click:Connect(function()
+            isOn = not isOn
+            ToggleBtn.BackgroundColor3 = isOn and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+            ToggleBtn.Text = isOn and "ON" or "OFF"
+            callback(isOn)
+        end)
+        
+        callback(defaultValue)
+        
+        return ToggleBtn
     end
     
-    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-    if HumanoidRootPart then
-        return HumanoidRootPart.Position + Vector3.new(0, 1.5, 0)
+    -- Função para criar slider
+    local function CreateSlider(text, min, max, default, suffix, callback)
+        local SliderFrame = Instance.new("Frame")
+        SliderFrame.Size = UDim2.new(1, 0, 0, 70)
+        SliderFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        SliderFrame.BackgroundTransparency = 0.3
+        SliderFrame.BorderSizePixel = 0
+        SliderFrame.Parent = ContentFrame
+        
+        local SliderCorner = Instance.new("UICorner")
+        SliderCorner.CornerRadius = UDim.new(0, 5)
+        SliderCorner.Parent = SliderFrame
+        
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(1, -20, 0, 25)
+        Label.Position = UDim2.new(0, 10, 0, 5)
+        Label.BackgroundTransparency = 1
+        Label.Text = text
+        Label.TextColor3 = Color3.fromRGB(220, 220, 220)
+        Label.TextSize = 14
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Font = Enum.Font.Gotham
+        Label.Parent = SliderFrame
+        
+        local ValueLabel = Instance.new("TextLabel")
+        ValueLabel.Size = UDim2.new(0, 50, 0, 25)
+        ValueLabel.Position = UDim2.new(1, -60, 0, 5)
+        ValueLabel.BackgroundTransparency = 1
+        ValueLabel.Text = tostring(default) .. suffix
+        ValueLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+        ValueLabel.TextSize = 14
+        ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+        ValueLabel.Font = Enum.Font.Gotham
+        ValueLabel.Parent = SliderFrame
+        
+        local SliderBar = Instance.new("Frame")
+        SliderBar.Size = UDim2.new(1, -20, 0, 4)
+        SliderBar.Position = UDim2.new(0, 10, 0, 40)
+        SliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        SliderBar.BorderSizePixel = 0
+        SliderBar.Parent = SliderFrame
+        
+        local SliderBarCorner = Instance.new("UICorner")
+        SliderBarCorner.CornerRadius = UDim.new(1, 0)
+        SliderBarCorner.Parent = SliderBar
+        
+        local FillBar = Instance.new("Frame")
+        FillBar.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+        FillBar.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+        FillBar.BorderSizePixel = 0
+        FillBar.Parent = SliderBar
+        
+        local FillBarCorner = Instance.new("UICorner")
+        FillBarCorner.CornerRadius = UDim.new(1, 0)
+        FillBarCorner.Parent = FillBar
+        
+        local currentValue = default
+        
+        local function UpdateValue(value)
+            currentValue = math.clamp(value, min, max)
+            local percent = (currentValue - min) / (max - min)
+            FillBar.Size = UDim2.new(percent, 0, 1, 0)
+            ValueLabel.Text = string.format("%.0f", currentValue) .. suffix
+            callback(currentValue)
+        end
+        
+        local dragging = false
+        
+        SliderBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                local percent = math.clamp((input.Position.X - SliderBar.AbsolutePosition.X) / SliderBar.AbsoluteSize.X, 0, 1)
+                local newValue = min + (max - min) * percent
+                UpdateValue(newValue)
+            end
+        end)
+        
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+        
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local percent = math.clamp((input.Position.X - SliderBar.AbsolutePosition.X) / SliderBar.AbsoluteSize.X, 0, 1)
+                local newValue = min + (max - min) * percent
+                UpdateValue(newValue)
+            end
+        end)
+        
+        UpdateValue(default)
+        
+        return SliderBar
     end
     
-    return nil
+    -- Criar os elementos da UI
+    CreateToggle("🔫 Aimbot", false, function(value)
+        AimbotEnabled = value
+        print("[Dark Aura] Aimbot:", value and "Ativado" or "Desativado")
+        if not value then
+            CurrentTarget = nil
+        end
+    end)
+    
+    CreateSlider("🎯 FOV Radius", 100, 800, 200, "px", function(value)
+        FOVRadius = value
+        print("[Dark Aura] FOV:", value)
+    end)
+    
+    CreateToggle("👁️ ESP", false, function(value)
+        ESPEnabled = value
+        print("[Dark Aura] ESP:", value and "Ativado" or "Desativado")
+        if value then
+            SetupESP()
+        else
+            ClearESP()
+        end
+    end)
+    
+    CreateToggle("📏 ESP Lines", false, function(value)
+        ESPLinesEnabled = value
+        print("[Dark Aura] ESP Lines:", value and "Ativado" or "Desativado")
+    end)
+    
+    CreateSlider("✨ Smoothness", 1, 100, 70, "%", function(value)
+        Smoothness = 1 - (value / 100)
+        print("[Dark Aura] Smoothness:", value, "%")
+    end)
+    
+    -- Controle de visibilidade do menu
+    local menuVisible = false
+    ToggleButton.MouseButton1Click:Connect(function()
+        menuVisible = not menuVisible
+        MainFrame.Visible = menuVisible
+    end)
+    
+    MinimizeBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+        menuVisible = false
+    end)
+    
+    CloseBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = false
+        menuVisible = false
+    end)
+    
+    -- Permitir arrastar a janela
+    local dragging = false
+    local dragStart = nil
+    local frameStart = nil
+    
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            frameStart = MainFrame.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + delta.X, frameStart.Y.Scale, frameStart.Y.Offset + delta.Y)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    print("[Dark Aura] Interface carregada com sucesso!")
 end
 
--- Verificar se player é válido
-local function IsValidPlayer(Player)
-    if not Player then return false end
-    if Player == LocalPlayer then return false end
-    if not Player.Character then return false end
-    
-    local Humanoid = Player.Character:FindFirstChildWhichIsA("Humanoid")
-    if not Humanoid or Humanoid.Health <= 0 then return false end
-    
-    return true
-end
+-- ============================================
+-- SEÇÃO: LÓGICA DO AIMBOT (CORRIGIDA)
+-- ============================================
 
--- Calcular distância do centro da tela
-local function GetDistanceFromCenter(WorldPosition)
-    local ScreenPos, OnScreen = Camera:WorldToViewportPoint(WorldPosition)
-    if not OnScreen then return math.huge end
+local function GetClosestPlayerToCursor()
+    local closestDistance = FOVRadius
+    local closestPlayer = nil
+    local mousePosition = UserInputService:GetMouseLocation()
     
-    local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local Pos = Vector2.new(ScreenPos.X, ScreenPos.Y)
-    
-    return (Pos - Center).Magnitude
-end
-
--- Encontrar player mais próximo do centro da tela
-local function GetClosestPlayer()
-    local ClosestDistance = FOVRadius
-    local ClosestPlayer = nil
-    
-    for _, Player in ipairs(Players:GetPlayers()) do
-        if IsValidPlayer(Player) then
-            local HeadPos = GetHeadPosition(Player.Character)
-            if HeadPos then
-                local Distance = GetDistanceFromCenter(HeadPos)
-                
-                if Distance < ClosestDistance then
-                    ClosestDistance = Distance
-                    ClosestPlayer = Player
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local head = player.Character:FindFirstChild("Head") or player.Character:FindFirstChild("HumanoidRootPart")
+            if head then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePosition).Magnitude
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestPlayer = player
+                    end
                 end
             end
         end
     end
     
-    return ClosestPlayer
+    return closestPlayer
 end
 
--- ============================================
--- FUNÇÕES DO FOV (CÍRCULO VISUAL)
--- ============================================
-
-local function CreateFOVCircle()
-    if FOVCircle then
-        FOVCircle:Remove()
-    end
+local function ApplySmoothAimbot(target)
+    if not target or not target.Character then return end
     
-    FOVCircle = Drawing.new("Circle")
-    FOVCircle.Radius = FOVRadius
-    FOVCircle.Thickness = 2
-    FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-    FOVCircle.Filled = false
-    FOVCircle.NumSides = 64
-    FOVCircle.Visible = AimbotEnabled
-    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-end
-
-local function UpdateFOVCircle()
-    if FOVCircle then
-        FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        FOVCircle.Radius = FOVRadius
-        FOVCircle.Visible = AimbotEnabled
-    end
-end
-
--- ============================================
--- FUNÇÕES DO AIMBOT
--- ============================================
-
-local function ApplyAimbot(TargetPlayer)
-    if not TargetPlayer or not TargetPlayer.Character then return end
+    local targetPart = target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart")
+    if not targetPart then return end
     
-    local HeadPos = GetHeadPosition(TargetPlayer.Character)
-    if not HeadPos then return end
-    
-    -- CFrame alvo olhando para a cabeça
-    local TargetCFrame = CFrame.new(Camera.CFrame.Position, HeadPos)
+    local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
     
     -- Aplicar suavização
-    local NewCFrame = Camera.CFrame:Lerp(TargetCFrame, Smoothness)
-    Camera.CFrame = NewCFrame
+    local newCFrame = Camera.CFrame:Lerp(targetCFrame, Smoothness)
+    Camera.CFrame = newCFrame
 end
 
 -- ============================================
--- FUNÇÕES DO ESP
+-- SEÇÃO: LÓGICA DO ESP (CORRIGIDA)
 -- ============================================
 
-local function CreateESPObjects(Player)
-    local Objects = {
-        Box = Drawing.new("Square"),
-        Name = Drawing.new("Text"),
-        HealthBar = Drawing.new("Line"),
-        Line = Drawing.new("Line")
-    }
+local function SetupESP()
+    ClearESP()
     
-    -- Configurar Box
-    Objects.Box.Thickness = 2
-    Objects.Box.Color = Color3.fromRGB(255, 0, 0)
-    Objects.Box.Filled = false
-    Objects.Box.Visible = false
-    
-    -- Configurar Nome
-    Objects.Name.Size = 14
-    Objects.Name.Center = true
-    Objects.Name.Outline = true
-    Objects.Name.Color = Color3.fromRGB(255, 255, 255)
-    Objects.Name.Visible = false
-    
-    -- Configurar Barra de Vida
-    Objects.HealthBar.Thickness = 3
-    Objects.HealthBar.Color = Color3.fromRGB(0, 255, 0)
-    Objects.HealthBar.Visible = false
-    
-    -- Configurar Linha
-    Objects.Line.Thickness = 1
-    Objects.Line.Color = Color3.fromRGB(255, 0, 0)
-    Objects.Line.Visible = false
-    
-    return Objects
-end
-
-local function UpdateESP()
-    if not ESPEnabled then return end
-    
-    for _, Player in ipairs(Players:GetPlayers()) do
-        if Player ~= LocalPlayer and IsValidPlayer(Player) then
-            -- Criar objetos se não existirem
-            if not ESPObjects[Player.UserId] then
-                ESPObjects[Player.UserId] = CreateESPObjects(Player)
-            end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local box = Drawing.new("Square")
+            box.Thickness = 2
+            box.Color = Color3.fromRGB(255, 0, 0)
+            box.Filled = false
+            box.Visible = false
             
-            local Objects = ESPObjects[Player.UserId]
-            local Character = Player.Character
-            local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-            local Humanoid = Character:FindFirstChildWhichIsA("Humanoid")
+            local nameText = Drawing.new("Text")
+            nameText.Size = 14
+            nameText.Center = true
+            nameText.Outline = true
+            nameText.Color = Color3.fromRGB(255, 255, 255)
+            nameText.Visible = false
             
-            if HumanoidRootPart and Humanoid then
-                local ScreenPos, OnScreen = Camera:WorldToViewportPoint(HumanoidRootPart.Position)
-                
-                if OnScreen then
-                    -- Calcular tamanho da box baseado na distância
-                    local Distance = (Camera.CFrame.Position - HumanoidRootPart.Position).Magnitude
-                    local BoxSize = math.clamp(200 / Distance, 40, 150)
-                    
-                    -- Atualizar Box
-                    Objects.Box.Size = Vector2.new(BoxSize, BoxSize)
-                    Objects.Box.Position = Vector2.new(ScreenPos.X - BoxSize/2, ScreenPos.Y - BoxSize)
-                    Objects.Box.Visible = true
-                    
-                    -- Atualizar Nome
-                    Objects.Name.Text = Player.Name
-                    Objects.Name.Position = Vector2.new(ScreenPos.X, ScreenPos.Y - BoxSize - 10)
-                    Objects.Name.Visible = true
-                    
-                    -- Atualizar Barra de Vida
-                    local HealthPercent = Humanoid.Health / Humanoid.MaxHealth
-                    Objects.HealthBar.From = Vector2.new(ScreenPos.X - BoxSize/2, ScreenPos.Y - BoxSize - 2)
-                    Objects.HealthBar.To = Vector2.new(ScreenPos.X - BoxSize/2 + (BoxSize * HealthPercent), ScreenPos.Y - BoxSize - 2)
-                    Objects.HealthBar.Visible = true
-                    
-                    -- Atualizar Linha (ESP Lines)
-                    if ESPLinesEnabled then
-                        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                        Objects.Line.From = Center
-                        Objects.Line.To = Vector2.new(ScreenPos.X, ScreenPos.Y)
-                        Objects.Line.Visible = true
-                    else
-                        Objects.Line.Visible = false
-                    end
-                else
-                    -- Esconder objetos se estiver fora da tela
-                    Objects.Box.Visible = false
-                    Objects.Name.Visible = false
-                    Objects.HealthBar.Visible = false
-                    Objects.Line.Visible = false
-                end
-            end
+            local healthBar = Drawing.new("Line")
+            healthBar.Thickness = 3
+            healthBar.Color = Color3.fromRGB(0, 255, 0)
+            healthBar.Visible = false
+            
+            local espLine = Drawing.new("Line")
+            espLine.Thickness = 1
+            espLine.Color = Color3.fromRGB(255, 0, 255)
+            espLine.Visible = false
+            
+            ESPObjects[player.UserId] = {
+                box = box,
+                name = nameText,
+                health = healthBar,
+                line = espLine
+            }
         end
     end
 end
 
 local function ClearESP()
-    for _, Objects in pairs(ESPObjects) do
-        pcall(function()
-            Objects.Box:Remove()
-            Objects.Name:Remove()
-            Objects.HealthBar:Remove()
-            Objects.Line:Remove()
-        end)
+    for _, objects in pairs(ESPObjects) do
+        if objects.box then objects.box:Remove() end
+        if objects.name then objects.name:Remove() end
+        if objects.health then objects.health:Remove() end
+        if objects.line then objects.line:Remove() end
     end
     ESPObjects = {}
 end
 
--- ============================================
--- CRIAR INTERFACE RAYFIELD
--- ============================================
-
-local Window = Rayfield:CreateWindow({
-    Name = "Aimbot & ESP System",
-    Icon = 0,
-    LoadingTitle = "Carregando...",
-    LoadingSubtitle = "Aimbot System",
-    Theme = "Default",
-    ToggleUIKeybind = "K",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "AimbotSystem",
-        FileName = "Config"
-    }
-})
-
-local MainTab = Window:CreateTab("Main", 4483362458)
-
--- Seção Aimbot
-local AimbotSection = MainTab:CreateSection("Aimbot")
-
--- Toggle Aimbot
-MainTab:CreateToggle({
-    Name = "Ativar Aimbot",
-    CurrentValue = false,
-    Flag = "AimbotToggle",
-    Callback = function(Value)
-        AimbotEnabled = Value
-        if FOVCircle then
-            FOVCircle.Visible = Value
-        end
-        if not Value then
-            CurrentTarget = nil
-        end
-        print("[Aimbot] " .. (Value and "Ativado" or "Desativado"))
-    end
-})
-
--- Slider FOV
-MainTab:CreateSlider({
-    Name = "Raio do FOV",
-    Min = 50,
-    Max = 500,
-    Increment = 10,
-    Suffix = "px",
-    CurrentValue = 120,
-    Flag = "FOVSlider",
-    Callback = function(Value)
-        FOVRadius = Value
-        if FOVCircle then
-            FOVCircle.Radius = Value
-        end
-        print("[FOV] Raio: " .. Value)
-    end
-})
-
--- Slider Suavização
-MainTab:CreateSlider({
-    Name = "Suavização do Aimbot",
-    Min = 0,
-    Max = 100,
-    Increment = 5,
-    Suffix = "%",
-    CurrentValue = 70,
-    Flag = "SmoothSlider",
-    Callback = function(Value)
-        Smoothness = Value / 100
-        print("[Smooth] Suavização: " .. Smoothness)
-    end
-})
-
--- Seção ESP
-local ESPection = MainTab:CreateSection("ESP")
-
--- Toggle ESP
-MainTab:CreateToggle({
-    Name = "Ativar ESP",
-    CurrentValue = false,
-    Flag = "ESPToggle",
-    Callback = function(Value)
-        ESPEnabled = Value
-        if not Value then
-            ClearESP()
-        end
-        print("[ESP] " .. (Value and "Ativado" or "Desativado"))
-    end
-})
-
--- Toggle ESP Lines
-MainTab:CreateToggle({
-    Name = "Ativar Linhas do ESP",
-    CurrentValue = false,
-    Flag = "ESPLinesToggle",
-    Callback = function(Value)
-        ESPLinesEnabled = Value
-        print("[ESP Lines] " .. (Value and "Ativado" or "Desativado"))
-    end
-})
-
--- ============================================
--- LOOP PRINCIPAL
--- ============================================
-
--- Criar círculo do FOV
-CreateFOVCircle()
-
--- Loop de atualização
-RunService.RenderStepped:Connect(function()
-    -- Atualizar posição do círculo FOV
-    UpdateFOVCircle()
+local function UpdateESP()
+    if not ESPEnabled then return end
     
+    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and ESPObjects[player.UserId] then
+            local objects = ESPObjects[player.UserId]
+            
+            if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") then
+                local hrp = player.Character.HumanoidRootPart
+                local humanoid = player.Character.Humanoid
+                local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                
+                if onScreen and humanoid.Health > 0 then
+                    local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
+                    local boxSize = math.clamp(200 / distance, 30, 120)
+                    
+                    -- Atualizar box
+                    objects.box.Size = Vector2.new(boxSize, boxSize)
+                    objects.box.Position = Vector2.new(pos.X - boxSize/2, pos.Y - boxSize/2)
+                    objects.box.Visible = true
+                    
+                    -- Atualizar nome
+                    objects.name.Text = player.Name
+                    objects.name.Position = Vector2.new(pos.X, pos.Y - boxSize/2 - 10)
+                    objects.name.Visible = true
+                    
+                    -- Atualizar barra de vida
+                    local healthPercent = humanoid.Health / humanoid.MaxHealth
+                    objects.health.From = Vector2.new(pos.X - boxSize/2, pos.Y - boxSize/2 - 5)
+                    objects.health.To = Vector2.new(pos.X - boxSize/2 + (boxSize * healthPercent), pos.Y - boxSize/2 - 5)
+                    objects.health.Visible = true
+                    
+                    -- Atualizar linha ESP
+                    if ESPLinesEnabled then
+                        objects.line.From = screenCenter
+                        objects.line.To = Vector2.new(pos.X, pos.Y)
+                        objects.line.Visible = true
+                    else
+                        objects.line.Visible = false
+                    end
+                else
+                    objects.box.Visible = false
+                    objects.name.Visible = false
+                    objects.health.Visible = false
+                    objects.line.Visible = false
+                end
+            else
+                objects.box.Visible = false
+                objects.name.Visible = false
+                objects.health.Visible = false
+                objects.line.Visible = false
+            end
+        end
+    end
+end
+
+-- ============================================
+-- SEÇÃO: EVENTOS E LOOP PRINCIPAL
+-- ============================================
+
+-- Detectar novos players
+Players.PlayerAdded:Connect(function(player)
+    if ESPEnabled and player ~= LocalPlayer then
+        local box = Drawing.new("Square")
+        box.Thickness = 2
+        box.Color = Color3.fromRGB(255, 0, 0)
+        box.Filled = false
+        box.Visible = false
+        
+        local nameText = Drawing.new("Text")
+        nameText.Size = 14
+        nameText.Center = true
+        nameText.Outline = true
+        nameText.Color = Color3.fromRGB(255, 255, 255)
+        nameText.Visible = false
+        
+        local healthBar = Drawing.new("Line")
+        healthBar.Thickness = 3
+        healthBar.Color = Color3.fromRGB(0, 255, 0)
+        healthBar.Visible = false
+        
+        local espLine = Drawing.new("Line")
+        espLine.Thickness = 1
+        espLine.Color = Color3.fromRGB(255, 0, 255)
+        espLine.Visible = false
+        
+        ESPObjects[player.UserId] = {
+            box = box,
+            name = nameText,
+            health = healthBar,
+            line = espLine
+        }
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESPObjects[player.UserId] then
+        if ESPObjects[player.UserId].box then ESPObjects[player.UserId].box:Remove() end
+        if ESPObjects[player.UserId].name then ESPObjects[player.UserId].name:Remove() end
+        if ESPObjects[player.UserId].health then ESPObjects[player.UserId].health:Remove() end
+        if ESPObjects[player.UserId].line then ESPObjects[player.UserId].line:Remove() end
+        ESPObjects[player.UserId] = nil
+    end
+end)
+
+-- Loop principal
+RunService.RenderStepped:Connect(function()
     -- Aimbot
     if AimbotEnabled then
-        local Target = GetClosestPlayer()
-        if Target then
-            ApplyAimbot(Target)
+        local target = GetClosestPlayerToCursor()
+        if target then
+            ApplySmoothAimbot(target)
         end
     end
     
     -- ESP
-    if ESPEnabled then
-        UpdateESP()
-    end
+    UpdateESP()
 end)
 
--- Atualizar círculo quando a tela redimensionar
-Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-    UpdateFOVCircle()
-end)
+-- ============================================
+-- SEÇÃO: INICIALIZAÇÃO
+-- ============================================
 
--- Limpar ESP quando jogadores saírem
-Players.PlayerRemoving:Connect(function(Player)
-    if ESPObjects[Player.UserId] then
-        local Objects = ESPObjects[Player.UserId]
-        pcall(function()
-            Objects.Box:Remove()
-            Objects.Name:Remove()
-            Objects.HealthBar:Remove()
-            Objects.Line:Remove()
-        end)
-        ESPObjects[Player.UserId] = nil
-    end
-end)
+-- Iniciar a UI
+CreateCustomUI()
 
--- Notificação de início
-Rayfield:Notify({
-    Title = "Sistema Carregado",
-    Content = "Pressione K para abrir o menu",
+-- Mensagem de boas-vindas
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Dark Aura BR 🇧🇷",
+    Text = "Sistema carregado! Pressione o botão flutuante para abrir o menu.",
     Duration = 5
 })
 
-print("[Sistema] Aimbot & ESP System carregado com sucesso!")
-print("[Sistema] Pressione K para abrir o menu")
+print("[Dark Aura BR 🇧🇷] Script carregado com sucesso!")
+print("[Dark Aura BR 🇧🇷] Use o botão flutuante para abrir o menu")
